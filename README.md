@@ -21,6 +21,7 @@ THIS SCRIPT IS PROVIDED WITH NO WARRANTY WHATSOEVER. PLEASE REVIEW THE SOURCE CO
 * Python 2.7+ (for DSM use: Official package from Synology does not work for HTTPS so use package from SynoCommunity)
 * File write access (for the token and local database)
 * Flickr API key (free)
+* (ExifTool)[http://www.sno.phy.queensu.ca/~phil/exiftool/], don't forget to update the path of you tool in uploadr.ini
 
 ## Setup:
 Go to http://www.flickr.com/services/apps/create/apply and apply for an API key
@@ -41,8 +42,13 @@ Edit the following variables in the uploadr.ini:
 * FLICKR["api_key"] = ""
 * FLICKR["secret"] = ""
 
+Update the path of your ExifTool :
+RAW_TOOL_PATH = "/volume1/photo/Image-ExifTool-9.69/"
+
 Refer to https://www.flickr.com/services/api/upload.api.html for what each of the
 upload arguments above correspond to for Flickr's API.
+
+
 
 There are many explicit options.
 Feel free to customize your uploadr.ini
