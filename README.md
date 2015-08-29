@@ -24,6 +24,7 @@ THIS SCRIPT IS PROVIDED WITH NO WARRANTY WHATSOEVER. PLEASE REVIEW THE SOURCE CO
 
 ## Setup:
 Go to http://www.flickr.com/services/apps/create/apply and apply for an API key
+Copy example_uploadr.ini  to uploadr.ini
 Edit the following variables in the uploadr.ini:
 
 * FILES_DIR = "YourDir"
@@ -42,6 +43,9 @@ Edit the following variables in the uploadr.ini:
 
 Refer to https://www.flickr.com/services/api/upload.api.html for what each of the
 upload arguments above correspond to for Flickr's API.
+
+There are many explicit options.
+Feel free to customize your uploadr.ini
 
 ## Usage
 Place the file uploadr.py in any directory and run via ssh (execution privs required):

@@ -87,7 +87,10 @@ import re
 
 import ConfigParser
 config = ConfigParser.ConfigParser()
-config.read(os.path.join(os.path.dirname(sys.argv[0]), "uploadr.ini"))
+FILENAME = "uploadr.ini"
+if ( not os.path.exists(FILENAME) ):
+    FILENAME="example_uploadr.ini"
+config.read(os.path.join(os.path.dirname(sys.argv[0]), FILENAME))
 FILES_DIR = eval(config.get('Config','FILES_DIR'))
 FLICKR = eval(config.get('Config','FLICKR'))
 SLEEP_TIME = eval(config.get('Config','SLEEP_TIME'))
@@ -104,6 +107,7 @@ MANAGE_CHANGES = eval(config.get('Config','MANAGE_CHANGES'))
 RAW_TOOL_PATH = eval(config.get('Config','RAW_TOOL_PATH'))
 CONVERT_RAW_FILES = eval(config.get('Config','CONVERT_RAW_FILES'))
 FULL_SET_NAME = eval(config.get('Config','FULL_SET_NAME'))
+REMOVE_DELETED_FILES = eval(config.get('Config','REMOVE_DELETED_FILES'))
 
 #print FILES_DIR
 #print FLICKR
@@ -350,6 +354,12 @@ class Uploadr:
         if not exists, delete photo from fickr
         http://www.flickr.com/services/api/flickr.photos.delete.html
         """
+
+        """
+        Check if remove deleted files
+        """
+        if (not REMOVE_DELETED_FILES):
+            return
 
         print("*****Removing deleted files*****")
 
