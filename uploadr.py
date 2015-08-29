@@ -90,6 +90,10 @@ config = ConfigParser.ConfigParser()
 FILENAME = "uploadr.ini"
 if ( not os.path.exists(FILENAME) ):
     FILENAME="example_uploadr.ini"
+    sys.stderr.write('Error : The configuration file uploadr.ini is missing\n')
+    sys.stderr.write('Please create your own uploadr.ini\n')
+    sys.stderr.write('You can find an example of file : example_uploadr.ini\n')
+    sys.exit(-1)
 config.read(os.path.join(os.path.dirname(sys.argv[0]), FILENAME))
 FILES_DIR = eval(config.get('Config','FILES_DIR'))
 FLICKR = eval(config.get('Config','FLICKR'))
