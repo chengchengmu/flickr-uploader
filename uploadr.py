@@ -80,6 +80,8 @@ import subprocess
 from sys import stdout
 import itertools
 import re
+import threading
+from queue import *
 
 ##
 ## Read Config from config.ini file
@@ -87,7 +89,8 @@ import re
 
 import ConfigParser
 config = ConfigParser.ConfigParser()
-FILENAME = "uploadr.ini"
+script_dir = os.path.dirname(os.path.realpath(__file__))
+FILENAME = os.path.join(script_dir, "uploadr.ini")
 if ( not os.path.exists(FILENAME) ):
     FILENAME="example_uploadr.ini"
     sys.stderr.write('Error : The configuration file uploadr.ini is missing\n')
@@ -112,6 +115,7 @@ RAW_TOOL_PATH = eval(config.get('Config','RAW_TOOL_PATH'))
 CONVERT_RAW_FILES = eval(config.get('Config','CONVERT_RAW_FILES'))
 FULL_SET_NAME = eval(config.get('Config','FULL_SET_NAME'))
 REMOVE_DELETED_FILES = eval(config.get('Config','REMOVE_DELETED_FILES'))
+NUMBER_WORKERS = eval(config.get('Config', 'NUMBER_WORKERS'))
 
 #print FILES_DIR
 #print FLICKR
@@ -153,6 +157,7 @@ class Uploadr:
 
     token = None
     perms = ""
+    q = None
 
     def __init__( self ):
         """ Constructor
@@ -403,18 +408,16 @@ class Uploadr:
 
         changedMedia_count = len(changedMedia)
         print("Found " + str(changedMedia_count) + " files")
-        coun = 0;
-
+	
+	self.q = Queue()
+        for i in range(NUMBER_WORKERS):
+            success = {}
+	    t = threading.Thread(target = self.uploadFile)
+            t.daemon = True
+            t.start()
         for i, file in enumerate( changedMedia ):
-            success = self.uploadFile( file )
-            if args.drip_feed and success and i != changedMedia_count-1:
-                print("Waiting " + str(DRIP_TIME) + " seconds before next upload")
-                time.sleep( DRIP_TIME )
-            coun = coun + 1;
-            if (coun%100 == 0):
-                print("   " + str(coun) + " files processed (uploaded, md5ed or timestamp checked)")
-        if (coun%100 > 0):
-            print("   " + str(coun) + " files processed (uploaded, md5ed or timestamp checked)")
+            self.q.put(file)
+        self.q.join()
         print("*****Completed uploading files*****")
 
     def convertRawFiles( self ):
@@ -437,7 +440,6 @@ class Uploadr:
                     fileExt = f.split(".")[-1]
                     filename = f.split(".")[0]
                     if ( fileExt.lower() == ext):
-
                         if (not os.path.exists(dirpath + "/" + filename + ".JPG")):
                             print("About to create JPG from raw "+ dirpath + "/" + f )
 
@@ -448,7 +450,6 @@ class Uploadr:
                                 flag = "JpgFromRaw"
 
                             command = RAW_TOOL_PATH +"exiftool -b -" + flag + " -w .JPG -ext " + ext + " -r '" + dirpath + "/" + filename + "." + fileExt + "'"
-                            #print(command)
 
                             p = subprocess.call(command, shell=True)
 
@@ -456,7 +457,6 @@ class Uploadr:
                             print ("About to copy tags from "+ dirpath + "/" + f + " to JPG.")
 
                             command = RAW_TOOL_PATH + "exiftool -tagsfromfile '" + dirpath + "/" + f + "' -r -all:all -ext JPG '" + dirpath + "/" + filename + ".JPG'"
-                            #print(command)
 
                             p = subprocess.call(command, shell=True)
 
@@ -487,71 +487,72 @@ class Uploadr:
         files.sort()
         return files
 
-    def uploadFile( self, file ):
+    def uploadFile(self):
         """ uploadFile
         """
-
-        success = False
-        con = lite.connect(DB_PATH)
-        con.text_factory = str
-        with con:
-            cur = con.cursor()
-            cur.execute("SELECT rowid,files_id,path,set_id,md5,tagged,last_modified FROM files WHERE path = ?", (file,))
-            row = cur.fetchone()
-
-            last_modified = os.stat(file).st_mtime;
-            if(row is None):
-                print("Uploading " + file + "...")
-                if FULL_SET_NAME:
-                    setName = os.path.relpath(os.path.dirname(file), FILES_DIR)
-                else:
-                    head, setName = os.path.split(os.path.dirname(file))
-                try:
-                    photo = ('photo', file, open(file,'rb').read())
-                    if args.title: # Replace
-                        FLICKR["title"] = args.title
-                    if args.description: # Replace
-                        FLICKR["description"] = args.description
-                    if args.tags: # Append
-                        FLICKR["tags"] += " " + args.tags
-                    d = {
-                        "auth_token"    : str(self.token),
-                        "perms"         : str(self.perms),
-                        "title"         : str( FLICKR["title"] ),
-                        "description"   : str( FLICKR["description"] ),
-                        "tags"          : str( FLICKR["tags"] + " " + setName ),
-                        "is_public"     : str( FLICKR["is_public"] ),
-                        "is_friend"     : str( FLICKR["is_friend"] ),
-                        "is_family"     : str( FLICKR["is_family"] )
-                    }
-                    sig = self.signCall( d )
-                    d[ "api_sig" ] = sig
-                    d[ "api_key" ] = FLICKR[ "api_key" ]
-                    url = self.build_request(api.upload, d, (photo,))
-                    res = parse(urllib2.urlopen( url ))
-                    if ( not res == "" and res.documentElement.attributes['stat'].value == "ok" ):
-                        print("Successfully uploaded the file: " + file)
-                        # Add to set
-                        cur.execute('INSERT INTO files (files_id, path, md5, last_modified, tagged) VALUES (?, ?, ?, ?, 1)',(int(str(res.getElementsByTagName('photoid')[0].firstChild.nodeValue)), file, self.md5Checksum(file),last_modified))
-                        success = True
-                    else :
-                        print("A problem occurred while attempting to upload the file: " + file)
-                        try:
-                            print("Error: " + str( res.toxml() ))
-                        except:
-                            print("Error: " + str( res.toxml() ))
-                except:
-                    print(str(sys.exc_info()))
-            elif (MANAGE_CHANGES):
-                if (row[6] == None) :
-                    cur.execute('UPDATE files SET last_modified = ? WHERE files_id = ?',(last_modified, row[1]))
-                    con.commit()
-                if (row[6] != last_modified) :
-                    fileMd5 = self.md5Checksum(file)
-                    if (fileMd5 != str(row[4])) :
-                        self.replacePhoto(file, row[1], fileMd5, last_modified, cur, con);
-            return success
-
+        while True:
+	    file = self.q.get()
+            success = False
+            con = lite.connect(DB_PATH)
+            con.text_factory = str
+            with con:
+                cur = con.cursor()
+                cur.execute("SELECT rowid,files_id,path,set_id,md5,tagged,last_modified FROM files WHERE path = ?", (file,))
+                row = cur.fetchone()
+    
+                last_modified = os.stat(file).st_mtime;
+                if(row is None):
+                    print("Uploading " + file + "...")
+                    if FULL_SET_NAME:
+                        setName = os.path.relpath(os.path.dirname(file), FILES_DIR)
+                    else:
+                        head, setName = os.path.split(os.path.dirname(file))
+                    try:
+                        photo = ('photo', file, open(file,'rb').read())
+                        if args.title: # Replace
+                            FLICKR["title"] = args.title
+                        if args.description: # Replace
+                            FLICKR["description"] = args.description
+                        if args.tags: # Append
+                            FLICKR["tags"] += " " + args.tags
+                        d = {
+                            "auth_token"    : str(self.token),
+                            "perms"         : str(self.perms),
+                            "title"         : str( FLICKR["title"] ),
+                            "description"   : str( FLICKR["description"] ),
+                            "tags"          : str( FLICKR["tags"] + " " + setName ),
+                            "is_public"     : str( FLICKR["is_public"] ),
+                            "is_friend"     : str( FLICKR["is_friend"] ),
+                            "is_family"     : str( FLICKR["is_family"] )
+                        }
+                        sig = self.signCall( d )
+                        d[ "api_sig" ] = sig
+                        d[ "api_key" ] = FLICKR[ "api_key" ]
+                        url = self.build_request(api.upload, d, (photo,))
+                        res = parse(urllib2.urlopen( url ))
+                        if ( not res == "" and res.documentElement.attributes['stat'].value == "ok" ):
+                            print("Successfully uploaded the file: " + file)
+                            # Add to set
+                            cur.execute('INSERT INTO files (files_id, path, md5, last_modified, tagged) VALUES (?, ?, ?, ?, 1)',(int(str(res.getElementsByTagName('photoid')[0].firstChild.nodeValue)), file, self.md5Checksum(file),last_modified))
+                            success = True
+                        else :
+                            print("A problem occurred while attempting to upload the file: " + file)
+                            try:
+                                print("Error: " + str( res.toxml() ))
+                            except:
+                                print("Error: " + str( res.toxml() ))
+                    except:
+                        print(str(sys.exc_info()))
+                elif (MANAGE_CHANGES):
+                    if (row[6] == None) :
+                        cur.execute('UPDATE files SET last_modified = ? WHERE files_id = ?',(last_modified, row[1]))
+                        con.commit()
+                    if (row[6] != last_modified) :
+                        fileMd5 = self.md5Checksum(file)
+                        if (fileMd5 != str(row[4])) :
+                            self.replacePhoto(file, row[1], fileMd5, last_modified, cur, con);
+		self.q.task_done()
+    
     def replacePhoto ( self, file, file_id, fileMd5, last_modified, cur, con ) :
         success = False
         print("Replacing the file: " + file + "...")
