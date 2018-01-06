@@ -82,6 +82,8 @@ import itertools
 import re
 import threading
 from queue import *
+from progressbar import  Percentage, Bar, \
+    ProgressBar
 
 ##
 ## Read Config from config.ini file
@@ -387,6 +389,14 @@ class Uploadr:
                     success = self.deleteFile(row, cur)
         print("*****Completed deleted files*****")
 
+    def progress_init( self, length):
+      self.progress_count=0
+      self.pbar = ProgressBar(widgets=[Percentage(), Bar()], maxval=length).start()
+
+    def progress_update(self):
+      self.progress_count+=1
+      self.pbar.update(self.progress_count)
+
     def upload( self ):
         """ upload
         """
@@ -409,6 +419,7 @@ class Uploadr:
         changedMedia_count = len(changedMedia)
         print("Found " + str(changedMedia_count) + " files")
 	
+        self.progress_init(changedMedia_count)
 	self.q = Queue()
         for i in range(NUMBER_WORKERS):
             success = {}
@@ -502,7 +513,7 @@ class Uploadr:
     
                 last_modified = os.stat(file).st_mtime;
                 if(row is None):
-                    print("Uploading " + file + "...")
+                    #print("Uploading " + file + "...")
                     if FULL_SET_NAME:
                         setName = os.path.relpath(os.path.dirname(file), FILES_DIR)
                     else:
@@ -531,7 +542,7 @@ class Uploadr:
                         url = self.build_request(api.upload, d, (photo,))
                         res = parse(urllib2.urlopen( url ))
                         if ( not res == "" and res.documentElement.attributes['stat'].value == "ok" ):
-                            print("Successfully uploaded the file: " + file)
+                            #print("Successfully uploaded the file: " + file)
                             # Add to set
                             cur.execute('INSERT INTO files (files_id, path, md5, last_modified, tagged) VALUES (?, ?, ?, ?, 1)',(int(str(res.getElementsByTagName('photoid')[0].firstChild.nodeValue)), file, self.md5Checksum(file),last_modified))
                             success = True
@@ -550,7 +561,8 @@ class Uploadr:
                     if (row[6] != last_modified) :
                         fileMd5 = self.md5Checksum(file)
                         if (fileMd5 != str(row[4])) :
-                            self.replacePhoto(file, row[1], fileMd5, last_modified, cur, con);
+                            self.replacePhoto(file, row[1], fileMd5, last_modified, cur, con); 
+                self.progress_update() 
 		self.q.task_done()
     
     def replacePhoto ( self, file, file_id, fileMd5, last_modified, cur, con ) :
